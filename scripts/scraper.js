@@ -1,18 +1,31 @@
 /**
- * Content Scraper — scrapes trending content from free APIs
- * Sources: Dev.to, Hacker News, Reddit (public JSON), Quotable API
+ * Content Scraper — scrapes trending content from multiple free sources
+ *
+ * Sources (all free, no API key needed):
+ * - Dev.to          → Tech articles with cover images
+ * - Hacker News     → Top tech stories
+ * - Reddit          → Multiple subreddits (tech, finance, motivation)
+ * - Medium (RSS)    → Trending blog articles
+ * - ProductHunt     → New product launches
+ * - Inc42 (RSS)     → Indian startup news & infographics
+ * - Google Trends   → Trending topics
+ * - Quotes          → Inspirational quotes
  */
 
 const SOURCES = {
     DEVTO: 'devto',
     HACKERNEWS: 'hackernews',
     REDDIT: 'reddit',
+    MEDIUM: 'medium',
+    PRODUCTHUNT: 'producthunt',
+    INC42: 'inc42',
+    GOOGLE_TRENDS: 'google_trends',
     QUOTES: 'quotes',
 };
 
-/**
- * Scrape trending articles from Dev.to (completely free, no API key)
- */
+// ─────────────────────────────────────────────
+// Dev.to — Tech articles with cover images
+// ─────────────────────────────────────────────
 async function scrapeDevTo() {
     const response = await fetch('https://dev.to/api/articles?top=1&per_page=10');
     if (!response.ok) throw new Error(`Dev.to API error: ${response.status}`);
@@ -32,15 +45,14 @@ async function scrapeDevTo() {
     };
 }
 
-/**
- * Scrape top stories from Hacker News (completely free, no API key)
- */
+// ─────────────────────────────────────────────
+// Hacker News — Top tech stories
+// ─────────────────────────────────────────────
 async function scrapeHackerNews() {
     const topRes = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
     if (!topRes.ok) throw new Error(`HN API error: ${topRes.status}`);
 
     const topIds = await topRes.json();
-    // Pick a random story from top 15
     const storyId = topIds[Math.floor(Math.random() * Math.min(topIds.length, 15))];
 
     const storyRes = await fetch(`https://hacker-news.firebaseio.com/v0/item/${storyId}.json`);
@@ -48,9 +60,9 @@ async function scrapeHackerNews() {
 
     return {
         title: story.title,
-        summary: story.title, // HN stories don't have descriptions
+        summary: story.title,
         url: story.url || `https://news.ycombinator.com/item?id=${story.id}`,
-        imageUrl: null, // HN has no images, will use Unsplash fallback
+        imageUrl: null,
         topic: 'technology',
         author: story.by || 'Unknown',
         source: 'Hacker News',
@@ -58,11 +70,15 @@ async function scrapeHackerNews() {
     };
 }
 
-/**
- * Scrape top posts from Reddit (public JSON, no API key needed)
- */
+// ─────────────────────────────────────────────
+// Reddit — Multiple subreddits (tech, finance, motivation)
+// ─────────────────────────────────────────────
 async function scrapeReddit() {
-    const subreddits = ['programming', 'technology', 'webdev', 'learnprogramming', 'datascience'];
+    const subreddits = [
+        'programming', 'technology', 'webdev', 'learnprogramming', 'datascience',
+        'artificial', 'startups', 'entrepreneur', 'productivity', 'getmotivated',
+        'investing', 'personalfinance', 'careerguidance', 'cscareerquestions',
+    ];
     const subreddit = subreddits[Math.floor(Math.random() * subreddits.length)];
 
     const response = await fetch(`https://www.reddit.com/r/${subreddit}/hot.json?limit=10`, {
@@ -76,7 +92,6 @@ async function scrapeReddit() {
     );
     const post = posts[Math.floor(Math.random() * Math.min(posts.length, 8))];
 
-    // Extract image from Reddit post
     let imageUrl = null;
     if (post.data.post_hint === 'image') {
         imageUrl = post.data.url;
@@ -96,9 +111,139 @@ async function scrapeReddit() {
     };
 }
 
-/**
- * Get an inspirational quote (completely free, no API key)
- */
+// ─────────────────────────────────────────────
+// Medium — Trending articles via RSS (free, no API key)
+// ─────────────────────────────────────────────
+async function scrapeMedium() {
+    const topics = ['technology', 'artificial-intelligence', 'programming', 'startup',
+        'productivity', 'self-improvement', 'data-science', 'leadership'];
+    const topic = topics[Math.floor(Math.random() * topics.length)];
+
+    // Use RSS2JSON free API to convert Medium RSS to JSON
+    const rssUrl = encodeURIComponent(`https://medium.com/feed/tag/${topic}`);
+    const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}`);
+    if (!response.ok) throw new Error(`Medium RSS error: ${response.status}`);
+
+    const data = await response.json();
+    if (data.status !== 'ok' || !data.items?.length) throw new Error('No Medium articles found');
+
+    const article = data.items[Math.floor(Math.random() * Math.min(data.items.length, 8))];
+
+    // Extract first image from content if available
+    const imgMatch = article.description?.match(/<img[^>]+src="([^"]+)"/);
+    const imageUrl = article.thumbnail || (imgMatch ? imgMatch[1] : null);
+
+    // Clean HTML tags from description
+    const cleanDesc = article.description?.replace(/<[^>]*>/g, '').substring(0, 300) || article.title;
+
+    return {
+        title: article.title,
+        summary: cleanDesc,
+        url: article.link,
+        imageUrl,
+        topic,
+        author: article.author || 'Unknown',
+        source: 'Medium',
+        tags: [topic, 'medium', 'blog'],
+    };
+}
+
+// ─────────────────────────────────────────────
+// ProductHunt — New product launches (free API)
+// ─────────────────────────────────────────────
+async function scrapeProductHunt() {
+    // ProductHunt has a public RSS feed
+    const rssUrl = encodeURIComponent('https://www.producthunt.com/feed');
+    const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}`);
+    if (!response.ok) throw new Error(`ProductHunt RSS error: ${response.status}`);
+
+    const data = await response.json();
+    if (data.status !== 'ok' || !data.items?.length) throw new Error('No PH items found');
+
+    const item = data.items[Math.floor(Math.random() * Math.min(data.items.length, 8))];
+
+    // Extract image from content
+    const imgMatch = item.description?.match(/<img[^>]+src="([^"]+)"/);
+    const imageUrl = item.thumbnail || (imgMatch ? imgMatch[1] : null);
+
+    const cleanDesc = item.description?.replace(/<[^>]*>/g, '').substring(0, 300) || item.title;
+
+    return {
+        title: item.title,
+        summary: cleanDesc,
+        url: item.link,
+        imageUrl,
+        topic: 'product-launch',
+        author: item.author || 'Product Hunt',
+        source: 'ProductHunt',
+        tags: ['productlaunch', 'startup', 'tech', 'innovation'],
+    };
+}
+
+// ─────────────────────────────────────────────
+// Inc42 — Indian startup news & infographics (RSS)
+// ─────────────────────────────────────────────
+async function scrapeInc42() {
+    const rssUrl = encodeURIComponent('https://inc42.com/feed/');
+    const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}`);
+    if (!response.ok) throw new Error(`Inc42 RSS error: ${response.status}`);
+
+    const data = await response.json();
+    if (data.status !== 'ok' || !data.items?.length) throw new Error('No Inc42 articles found');
+
+    const article = data.items[Math.floor(Math.random() * Math.min(data.items.length, 8))];
+
+    const imgMatch = article.description?.match(/<img[^>]+src="([^"]+)"/);
+    const imageUrl = article.thumbnail || (imgMatch ? imgMatch[1] : null);
+
+    const cleanDesc = article.description?.replace(/<[^>]*>/g, '').substring(0, 300) || article.title;
+
+    return {
+        title: article.title,
+        summary: cleanDesc,
+        url: article.link,
+        imageUrl,
+        topic: 'startups',
+        author: article.author || 'Inc42',
+        source: 'Inc42',
+        tags: ['startup', 'india', 'business', 'funding'],
+    };
+}
+
+// ─────────────────────────────────────────────
+// Google Trends — Trending topics (RSS)
+// ─────────────────────────────────────────────
+async function scrapeGoogleTrends() {
+    const rssUrl = encodeURIComponent('https://trends.google.com/trending/rss?geo=IN');
+    const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}`);
+    if (!response.ok) throw new Error(`Google Trends RSS error: ${response.status}`);
+
+    const data = await response.json();
+    if (data.status !== 'ok' || !data.items?.length) throw new Error('No trends found');
+
+    const trend = data.items[Math.floor(Math.random() * Math.min(data.items.length, 10))];
+
+    // Extract image from trend news
+    const imgMatch = trend.description?.match(/<img[^>]+src="([^"]+)"/);
+    const imageUrl = imgMatch ? imgMatch[1] : null;
+
+    const cleanDesc = trend.description?.replace(/<[^>]*>/g, '').substring(0, 300) || trend.title;
+
+    return {
+        title: `Trending: ${trend.title}`,
+        summary: cleanDesc || `${trend.title} is trending right now`,
+        url: trend.link || '',
+        imageUrl,
+        topic: 'trending',
+        author: 'Google Trends',
+        source: 'Google Trends',
+        tags: ['trending', 'news', 'viral'],
+    };
+}
+
+// ─────────────────────────────────────────────
+// Quotes — Inspirational quotes (free API)
+// ─────────────────────────────────────────────
 async function scrapeQuote() {
     const response = await fetch('https://api.quotable.io/quotes/random');
     if (!response.ok) throw new Error(`Quotable API error: ${response.status}`);
@@ -109,7 +254,7 @@ async function scrapeQuote() {
         title: quote.content,
         summary: `"${quote.content}" — ${quote.author}`,
         url: '',
-        imageUrl: null, // Will use Unsplash fallback
+        imageUrl: null,
         topic: quote.tags?.[0] || 'motivation',
         author: quote.author,
         source: 'Quote',
@@ -117,18 +262,21 @@ async function scrapeQuote() {
     };
 }
 
-/**
- * Scrape content from a random source
- */
+// ─────────────────────────────────────────────
+// Main scraper — weighted random source selection
+// ─────────────────────────────────────────────
 async function scrapeContent(preferredSource = null) {
     const sources = [
         { name: SOURCES.DEVTO, fn: scrapeDevTo, weight: 3 },
-        { name: SOURCES.HACKERNEWS, fn: scrapeHackerNews, weight: 3 },
-        { name: SOURCES.REDDIT, fn: scrapeReddit, weight: 2 },
-        { name: SOURCES.QUOTES, fn: scrapeQuote, weight: 2 },
+        { name: SOURCES.HACKERNEWS, fn: scrapeHackerNews, weight: 2 },
+        { name: SOURCES.REDDIT, fn: scrapeReddit, weight: 3 },
+        { name: SOURCES.MEDIUM, fn: scrapeMedium, weight: 3 },
+        { name: SOURCES.PRODUCTHUNT, fn: scrapeProductHunt, weight: 2 },
+        { name: SOURCES.INC42, fn: scrapeInc42, weight: 2 },
+        { name: SOURCES.GOOGLE_TRENDS, fn: scrapeGoogleTrends, weight: 2 },
+        { name: SOURCES.QUOTES, fn: scrapeQuote, weight: 1 },
     ];
 
-    // If preferred source is specified, use it
     if (preferredSource) {
         const source = sources.find((s) => s.name === preferredSource);
         if (source) {
@@ -137,7 +285,7 @@ async function scrapeContent(preferredSource = null) {
         }
     }
 
-    // Weighted random selection
+    // Weighted random selection with fallback chain
     const weighted = sources.flatMap((s) => Array(s.weight).fill(s));
     const shuffled = weighted.sort(() => Math.random() - 0.5);
 
@@ -157,7 +305,8 @@ async function scrapeContent(preferredSource = null) {
 
 // Allow running standalone
 if (process.argv[1]?.endsWith('scraper.js')) {
-    scrapeContent()
+    const source = process.argv[2] || null;
+    scrapeContent(source)
         .then((content) => {
             console.log('\n📋 Scraped Content:');
             console.log(JSON.stringify(content, null, 2));
