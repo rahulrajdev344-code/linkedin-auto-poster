@@ -1,20 +1,96 @@
 /**
  * Image Fetcher — gets images from actual article pages
- * Scrapes og:image from the article URL so images match the news content
+ * 
+ * Priority:
+ * 1. Source imageUrl (Dev.to cover, Reddit image)
+ * 2. Resolve real article URL via DuckDuckGo → scrape og:image
+ * 3. Picsum fallback (last resort only)
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// Map common news sources to their domains
+const SOURCE_DOMAINS = {
+    'The Guardian': 'theguardian.com',
+    'India Today': 'indiatoday.in',
+    'The Times of India': 'timesofindia.indiatimes.com',
+    'TechCrunch': 'techcrunch.com',
+    'The Hindu': 'thehindu.com',
+    'NDTV': 'ndtv.com',
+    'Reuters': 'reuters.com',
+    'BBC': 'bbc.com',
+    'CNN': 'cnn.com',
+    'Wired': 'wired.com',
+    'The Verge': 'theverge.com',
+    'Ars Technica': 'arstechnica.com',
+    'Forbes': 'forbes.com',
+    'Bloomberg': 'bloomberg.com',
+    'Mint': 'livemint.com',
+    'Economic Times': 'economictimes.indiatimes.com',
+    'Business Standard': 'business-standard.com',
+    'Hindustan Times': 'hindustantimes.com',
+    'The Indian Express': 'indianexpress.com',
+    'Moneycontrol': 'moneycontrol.com',
+    'Business Insider': 'businessinsider.com',
+    'The New York Times': 'nytimes.com',
+    'Washington Post': 'washingtonpost.com',
+    'Engadget': 'engadget.com',
+    'ZDNet': 'zdnet.com',
+    'VentureBeat': 'venturebeat.com',
+    'MIT Technology Review': 'technologyreview.com',
+};
+
 /**
- * Scrape og:image from an article URL
- * This gets the REAL article image that matches the news content
+ * Find the real article URL using DuckDuckGo search
+ * Google News URLs use JS redirects that fetch can't follow,
+ * so we search for the article title on the source's website
+ */
+async function findRealArticleUrl(title, sourceName) {
+    if (!title) return null;
+
+    // Determine the source domain
+    let domain = SOURCE_DOMAINS[sourceName];
+    if (!domain) {
+        // Guess from source name
+        domain = sourceName?.toLowerCase().replace(/^the\s+/, '').replace(/\s+/g, '') + '.com';
+    }
+
+    console.log(`🔍 Searching for real article URL on ${domain}...`);
+
+    try {
+        const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(title + ' site:' + domain)}`;
+        const res = await fetch(searchUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+            signal: AbortSignal.timeout(5000),
+        });
+        const html = await res.text();
+
+        // Extract first result URL (DDG encodes URLs)
+        const resultMatch = html.match(/class="result__a"[^>]*href="([^"]+)"/);
+        if (!resultMatch) {
+            console.warn('⚠️ No search results found');
+            return null;
+        }
+
+        const rawUrl = resultMatch[1];
+        const realUrl = decodeURIComponent(rawUrl.replace(/^\/\/duckduckgo\.com\/l\/\?uddg=/, '').split('&')[0]);
+        console.log(`✅ Found real URL: ${realUrl.substring(0, 100)}...`);
+        return realUrl;
+    } catch (error) {
+        console.warn(`⚠️ Search failed: ${error.message}`);
+        return null;
+    }
+}
+
+/**
+ * Scrape og:image from a real article URL
  */
 async function scrapeArticleImage(articleUrl) {
     if (!articleUrl) return null;
 
-    console.log(`🖼️  Scraping article image from: ${articleUrl.substring(0, 80)}...`);
+    console.log(`🖼️  Scraping og:image from: ${articleUrl.substring(0, 80)}...`);
     try {
         const response = await fetch(articleUrl, {
             headers: {
@@ -22,6 +98,7 @@ async function scrapeArticleImage(articleUrl) {
                 'Accept': 'text/html',
             },
             redirect: 'follow',
+            signal: AbortSignal.timeout(6000),
         });
 
         if (!response.ok) {
@@ -31,7 +108,7 @@ async function scrapeArticleImage(articleUrl) {
 
         const html = await response.text();
 
-        // Try og:image first (most reliable for article images)
+        // Try og:image first
         let imageUrl = null;
         const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
             || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
@@ -65,7 +142,7 @@ async function getFallbackImage(topic = 'technology') {
     const seed = encodeURIComponent(topic + Date.now());
     const url = `https://picsum.photos/seed/${seed}/1200/630`;
 
-    console.log(`🖼️  Fetching fallback image (no article image found)`);
+    console.log(`🖼️  Using fallback image (no article image found)`);
     const response = await fetch(url, { redirect: 'follow' });
     if (!response.ok) throw new Error(`Image API error: ${response.status}`);
 
@@ -90,6 +167,7 @@ async function downloadImage(imageUrl) {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             },
             redirect: 'follow',
+            signal: AbortSignal.timeout(8000),
         });
 
         if (!response.ok) {
@@ -124,8 +202,8 @@ async function downloadImage(imageUrl) {
 
 /**
  * Get an image for a post — priority order:
- * 1. Source imageUrl (from scraper, e.g. Dev.to cover_image)
- * 2. Scrape og:image from the article URL
+ * 1. Source imageUrl (from scraper, e.g. Dev.to cover_image, Reddit image)
+ * 2. Find real article URL via DuckDuckGo → scrape og:image from source website
  * 3. Fallback to picsum.photos (last resort)
  */
 async function getImageForPost(content) {
@@ -135,8 +213,26 @@ async function getImageForPost(content) {
         if (image) return image;
     }
 
-    // 2. Try scraping og:image from the article URL
-    if (content.url) {
+    // 2. Try to find real article URL and scrape og:image
+    // Extract source name from title (Google News format: "Title - Source Name")
+    const sourceName = content.sourceName
+        || content.title?.match(/ - ([^-]+)$/)?.[1]?.trim()
+        || '';
+    const cleanTitle = content.title?.replace(/ - [^-]+$/, '') || content.title;
+
+    if (cleanTitle && sourceName) {
+        const realUrl = await findRealArticleUrl(cleanTitle, sourceName);
+        if (realUrl) {
+            const ogImageUrl = await scrapeArticleImage(realUrl);
+            if (ogImageUrl) {
+                const image = await downloadImage(ogImageUrl);
+                if (image) return image;
+            }
+        }
+    }
+
+    // Also try direct URL if available and not a Google News redirect
+    if (content.url && !content.url.includes('news.google.com')) {
         const ogImageUrl = await scrapeArticleImage(content.url);
         if (ogImageUrl) {
             const image = await downloadImage(ogImageUrl);
@@ -166,12 +262,4 @@ function cleanupImage(image) {
     }
 }
 
-// Allow running standalone
-if (process.argv[1]?.endsWith('image-fetcher.js')) {
-    const url = process.argv[2] || 'https://www.theguardian.com';
-    scrapeArticleImage(url).then((img) => {
-        console.log('OG Image:', img);
-    }).catch(console.error);
-}
-
-module.exports = { getImageForPost, downloadImage, scrapeArticleImage, getFallbackImage, cleanupImage };
+module.exports = { getImageForPost, downloadImage, scrapeArticleImage, findRealArticleUrl, getFallbackImage, cleanupImage };
