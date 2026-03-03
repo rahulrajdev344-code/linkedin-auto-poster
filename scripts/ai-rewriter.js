@@ -36,20 +36,7 @@ const SOURCE_STYLE_MAP = {
  * Build a prompt for the AI to rewrite content into a LinkedIn post
  */
 function buildPrompt(content, style) {
-    const basePrompt = `You are a LinkedIn content creator who writes viral, high-engagement posts. Rewrite the following content into an engaging LinkedIn post.
-
-RULES:
-- Write in first person, as if sharing your own thoughts/discovery
-- Keep it under 1200 characters
-- Use short paragraphs (1-2 sentences each)
-- Start with a compelling hook (first line is crucial — it determines if people click "see more")
-- Add line breaks between paragraphs for readability
-- Include 3-5 relevant hashtags at the end
-- Do NOT use markdown formatting (no **, ##, etc.)
-- Do NOT include any URLs or links
-- Sound authentic and personal, not robotic or corporate
-- Add a call-to-action or question at the end to drive engagement
-- Use emojis sparingly (1-3 max) for visual appeal`;
+    const basePrompt = `You are a LinkedIn content creator who writes viral, high-engagement posts. Rewrite the following content into an engaging LinkedIn post.\r\n\r\nRULES:\r\n- Write in first person, as if sharing your own thoughts about THIS SPECIFIC topic\r\n- IMPORTANT: Your post MUST be about the specific content provided. Mention the key facts, names, and details from the source\r\n- Do NOT write generic advice or motivation that ignores the actual content\r\n- Keep it under 1200 characters\r\n- Use short paragraphs (1-2 sentences each)\r\n- Start with a compelling hook referencing the ACTUAL topic (first line is crucial)\r\n- Add line breaks between paragraphs for readability\r\n- Include 3-5 relevant hashtags at the end\r\n- Do NOT use markdown formatting (no **, ##, etc.)\r\n- Do NOT include any URLs or links\r\n- Sound authentic and personal, not robotic or corporate\r\n- Add a call-to-action or question at the end to drive engagement\r\n- Use emojis sparingly (1-3 max) for visual appeal`;
 
     const styleInstructions = {
         'thought-leadership':
