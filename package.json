@@ -1,0 +1,19 @@
+{
+  "name": "linkedin-auto-poster",
+  "version": "1.0.0",
+  "description": "Free cloud-based LinkedIn auto-poster with web scraping and AI rewriting",
+  "main": "scripts/main.js",
+  "scripts": {
+    "start": "node scripts/main.js",
+    "dry-run": "node scripts/main.js --dry-run",
+    "scrape": "node scripts/scraper.js",
+    "rewrite": "node scripts/ai-rewriter.js",
+    "token": "node helpers/get-linkedin-token.js"
+  },
+  "dependencies": {
+    "groq-sdk": "^0.12.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
