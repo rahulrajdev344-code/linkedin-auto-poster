@@ -1,5 +1,5 @@
 /**
- * Image Fetcher — downloads images and provides fallback images from Unsplash
+ * Image Fetcher — downloads images and provides fallback images
  * Used to attach images to LinkedIn posts
  */
 
@@ -8,16 +8,15 @@ const path = require('path');
 const os = require('os');
 
 /**
- * Fetch a fallback image from Unsplash based on topic (free, no API key needed)
- * Uses Unsplash Source which redirects to a random image
+ * Fetch a fallback image from picsum.photos (free, reliable, no API key needed)
  */
-async function getUnsplashImage(topic = 'technology') {
-    const query = encodeURIComponent(topic);
-    const url = `https://source.unsplash.com/1200x630/?${query}`;
+async function getFallbackImage(topic = 'technology') {
+    const seed = encodeURIComponent(topic + Date.now());
+    const url = `https://picsum.photos/seed/${seed}/1200/630`;
 
-    console.log(`🖼️  Fetching Unsplash image for topic: "${topic}"`);
+    console.log(`🖼️  Fetching fallback image for topic: "${topic}"`);
     const response = await fetch(url, { redirect: 'follow' });
-    if (!response.ok) throw new Error(`Unsplash error: ${response.status}`);
+    if (!response.ok) throw new Error(`Image API error: ${response.status}`);
 
     const buffer = Buffer.from(await response.arrayBuffer());
     const tmpPath = path.join(os.tmpdir(), `linkedin-image-${Date.now()}.jpg`);
@@ -72,7 +71,7 @@ async function downloadImage(imageUrl) {
 }
 
 /**
- * Get an image for a post — tries source image first, falls back to Unsplash
+ * Get an image for a post — tries source image first, falls back to picsum
  */
 async function getImageForPost(content) {
     // Try the source image first
@@ -81,11 +80,11 @@ async function getImageForPost(content) {
         if (image) return image;
     }
 
-    // Fallback to Unsplash
+    // Fallback to picsum.photos
     try {
-        return await getUnsplashImage(content.topic || 'technology');
+        return await getFallbackImage(content.topic || 'technology');
     } catch (error) {
-        console.warn(`⚠️ Unsplash fallback failed: ${error.message}`);
+        console.warn(`⚠️ Fallback image failed: ${error.message}`);
         return null; // Post will be text-only
     }
 }
@@ -106,7 +105,7 @@ function cleanupImage(image) {
 // Allow running standalone
 if (process.argv[1]?.endsWith('image-fetcher.js')) {
     const topic = process.argv[2] || 'technology';
-    getUnsplashImage(topic).then(console.log).catch(console.error);
+    getFallbackImage(topic).then(console.log).catch(console.error);
 }
 
-module.exports = { getImageForPost, downloadImage, getUnsplashImage, cleanupImage };
+module.exports = { getImageForPost, downloadImage, getFallbackImage, cleanupImage };
