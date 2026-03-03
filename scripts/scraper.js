@@ -8,6 +8,7 @@
  * - Medium (RSS)    → Trending blog articles
  * - ProductHunt     → New product launches
  * - Inc42 (RSS)     → Indian startup news & infographics
+ * - Google News     → AI, tech, startup news from India
  * - Google Trends   → Trending topics
  * - Quotes          → Inspirational quotes
  */
@@ -19,6 +20,7 @@ const SOURCES = {
     MEDIUM: 'medium',
     PRODUCTHUNT: 'producthunt',
     INC42: 'inc42',
+    GOOGLE_NEWS: 'google_news',
     GOOGLE_TRENDS: 'google_trends',
     QUOTES: 'quotes',
 };
@@ -242,6 +244,49 @@ async function scrapeGoogleTrends() {
 }
 
 // ─────────────────────────────────────────────
+// Google News — AI, tech, startup news from India (RSS)
+// ─────────────────────────────────────────────
+async function scrapeGoogleNews() {
+    const queries = [
+        'ai', 'artificial intelligence', 'technology trends',
+        'startup funding india', 'programming', 'machine learning',
+        'tech layoffs', 'saas', 'cloud computing', 'cybersecurity',
+    ];
+    const query = queries[Math.floor(Math.random() * queries.length)];
+
+    const rssUrl = encodeURIComponent(
+        `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`
+    );
+    const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}`);
+    if (!response.ok) throw new Error(`Google News RSS error: ${response.status}`);
+
+    const data = await response.json();
+    if (data.status !== 'ok' || !data.items?.length) throw new Error('No Google News articles found');
+
+    const article = data.items[Math.floor(Math.random() * Math.min(data.items.length, 10))];
+
+    // Extract image if available
+    const imgMatch = article.description?.match(/<img[^>]+src=\"([^\"]+)\"/);
+    const imageUrl = article.thumbnail || (imgMatch ? imgMatch[1] : null);
+
+    const cleanDesc = article.description?.replace(/<[^>]*>/g, '').substring(0, 300) || article.title;
+
+    // Clean up title (remove " - Source" suffix)
+    const cleanTitle = article.title?.replace(/ - [^-]+$/, '') || article.title;
+
+    return {
+        title: cleanTitle,
+        summary: cleanDesc,
+        url: article.link,
+        imageUrl,
+        topic: query,
+        author: article.author || 'Google News',
+        source: 'Google News',
+        tags: [query.replace(/\s+/g, ''), 'news', 'tech', 'india'],
+    };
+}
+
+// ─────────────────────────────────────────────
 // Quotes — Inspirational quotes (free API)
 // ─────────────────────────────────────────────
 async function scrapeQuote() {
@@ -273,6 +318,7 @@ async function scrapeContent(preferredSource = null) {
         { name: SOURCES.MEDIUM, fn: scrapeMedium, weight: 3 },
         { name: SOURCES.PRODUCTHUNT, fn: scrapeProductHunt, weight: 2 },
         { name: SOURCES.INC42, fn: scrapeInc42, weight: 2 },
+        { name: SOURCES.GOOGLE_NEWS, fn: scrapeGoogleNews, weight: 3 },
         { name: SOURCES.GOOGLE_TRENDS, fn: scrapeGoogleTrends, weight: 2 },
         { name: SOURCES.QUOTES, fn: scrapeQuote, weight: 1 },
     ];
