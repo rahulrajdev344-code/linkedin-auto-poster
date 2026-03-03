@@ -24,6 +24,7 @@ async function scrapeDevTo() {
         title: article.title,
         summary: article.description || article.title,
         url: article.url,
+        imageUrl: article.cover_image || article.social_image || null,
         topic: article.tag_list?.[0] || 'technology',
         author: article.user?.name || 'Unknown',
         source: 'Dev.to',
@@ -49,6 +50,7 @@ async function scrapeHackerNews() {
         title: story.title,
         summary: story.title, // HN stories don't have descriptions
         url: story.url || `https://news.ycombinator.com/item?id=${story.id}`,
+        imageUrl: null, // HN has no images, will use Unsplash fallback
         topic: 'technology',
         author: story.by || 'Unknown',
         source: 'Hacker News',
@@ -74,10 +76,19 @@ async function scrapeReddit() {
     );
     const post = posts[Math.floor(Math.random() * Math.min(posts.length, 8))];
 
+    // Extract image from Reddit post
+    let imageUrl = null;
+    if (post.data.post_hint === 'image') {
+        imageUrl = post.data.url;
+    } else if (post.data.thumbnail && post.data.thumbnail.startsWith('http')) {
+        imageUrl = post.data.preview?.images?.[0]?.source?.url?.replace(/&amp;/g, '&') || null;
+    }
+
     return {
         title: post.data.title,
         summary: post.data.selftext?.substring(0, 300) || post.data.title,
         url: `https://reddit.com${post.data.permalink}`,
+        imageUrl,
         topic: subreddit,
         author: post.data.author || 'Unknown',
         source: `Reddit r/${subreddit}`,
@@ -98,6 +109,7 @@ async function scrapeQuote() {
         title: quote.content,
         summary: `"${quote.content}" — ${quote.author}`,
         url: '',
+        imageUrl: null, // Will use Unsplash fallback
         topic: quote.tags?.[0] || 'motivation',
         author: quote.author,
         source: 'Quote',
